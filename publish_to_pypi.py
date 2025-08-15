@@ -196,9 +196,22 @@ def get_package_name():
 
 def fetch_url_with_retry(url, max_retries=3, retry_delay=2):
     """Fetch URL content with retry logic."""
+    # Add cache-busting query parameter with current timestamp to avoid caching issues
+    cache_buster = int(time.time())
+    url_with_cache_buster = f"{url}?_cb={cache_buster}"
+    
     for attempt in range(max_retries):
         try:
-            with urllib.request.urlopen(url, timeout=10) as response:
+            # Create a request with headers that prevent caching
+            request = urllib.request.Request(
+                url_with_cache_buster,
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
                 return response.read()
         except (urllib.error.URLError, socket.timeout) as e:
             if attempt < max_retries - 1:
@@ -287,8 +300,8 @@ def main():
     
     if local_pypirc.exists():
         print_info("Found local .pypirc file in project directory.")
-        use_local = input("Do you want to use this local .pypirc file? (y/n): ")
-        if use_local.lower() == 'y':
+        use_local = input("Do you want to use this local .pypirc file? (Y/n): ").strip()
+        if use_local.lower() != 'n':
             pypirc_path = str(local_pypirc.absolute())
             print_success(f"Using local .pypirc file: {pypirc_path}")
     else:

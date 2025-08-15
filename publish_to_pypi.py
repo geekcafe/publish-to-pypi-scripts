@@ -236,6 +236,10 @@ def check_for_script_updates():
     sh_url = "https://raw.githubusercontent.com/geekcafe/publish-to-pypi-scripts/refs/heads/main/publish_to_pypi.sh"
     
     updates_available = False
+    local_py_hash = None
+    remote_py_content = None
+    local_sh_hash = None
+    remote_sh_content = None
     
     # Check Python script
     if Path("publish_to_pypi.py").exists():
@@ -255,6 +259,7 @@ def check_for_script_updates():
             print_warning(f"Could not check for Python script updates: {e}")
     
     # Check Shell script
+    sh_needs_update = False
     if Path("publish_to_pypi.sh").exists():
         try:
             # Get local file hash
@@ -268,6 +273,7 @@ def check_for_script_updates():
             if local_sh_hash != remote_sh_hash:
                 print_warning("A new version of publish_to_pypi.sh is available.")
                 updates_available = True
+                sh_needs_update = True
         except Exception as e:
             print_warning(f"Could not check for Shell script updates: {e}")
     
@@ -275,8 +281,26 @@ def check_for_script_updates():
         print_info("Updates are available for one or more scripts.")
         update = input("Do you want to update the scripts now? (y/n): ")
         if update.lower() == 'y':
-            print_info("Please run the shell script again to update the scripts.")
-            print_info("Run: ./publish_to_pypi.sh --update")
+            # Download the shell script if it exists and needs updating
+            if sh_needs_update and remote_sh_content:
+                print_info("Downloading latest shell script...")
+                try:
+                    # Download to temporary file first for atomic replacement
+                    tmp_sh_file = Path("publish_to_pypi.sh.tmp")
+                    with open(tmp_sh_file, "wb") as f:
+                        f.write(remote_sh_content)
+                    
+                    # Make it executable
+                    tmp_sh_file.chmod(tmp_sh_file.stat().st_mode | 0o111)  # Add executable bit
+                    
+                    # Move file atomically
+                    tmp_sh_file.replace(Path("publish_to_pypi.sh"))
+                    print_success("Successfully updated shell script.")
+                except Exception as e:
+                    print_error(f"Failed to update shell script: {e}")
+            
+            print_info("Please run the shell script again to run with the updated script.")
+            print_info("Run: ./publish_to_pypi.sh")
             sys.exit(0)
         else:
             print_info("Continuing with current versions...")

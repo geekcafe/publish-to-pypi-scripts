@@ -46,9 +46,13 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# --- check if publish_to_pypi.py exists ---
+if [ ! -f "publish_to_pypi.py" ]; then
+  echo "🔍 publish_to_pypi.py not found. Will automatically download it."
+  FETCH_LATEST="yes"
 # --- interactive prompt if needed ---
-if [[ "$FETCH_LATEST" == "interactive" ]]; then
-  read -r -p "Pull latest setup.py from repository? [y/N] " answer
+elif [[ "$FETCH_LATEST" == "interactive" ]]; then
+  read -r -p "Pull latest publish_to_pypi.py from repository? [y/N] " answer
   if [[ "$answer" =~ ^[Yy] ]]; then
     FETCH_LATEST="yes"
   else
@@ -58,11 +62,10 @@ fi
 
 # --- fetch if requested ---
 if [[ "$FETCH_LATEST" == "yes" ]]; then
-  echo "🔄 Fetching latest setup.py..."
+  echo "🔄 Fetching latest publish_to_pypi.py..."
   curl -sSL \
-    https://raw.githubusercontent.com/geekcafe/publish_to_pypi/main/publish_to_pypi.sh \
-    -o publish_to_pypi.sh
-  
+    https://raw.githubusercontent.com/geekcafe/publish_to_pypi/main/publish_to_pypi.py \
+    -o publish_to_pypi.py
 fi
 
 # --- run the Python installer ---

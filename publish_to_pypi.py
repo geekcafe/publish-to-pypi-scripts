@@ -9,6 +9,8 @@ import os
 import shutil
 import subprocess
 import sys
+import hashlib
+import urllib.request
 from pathlib import Path
 
 
@@ -190,9 +192,71 @@ def get_package_name():
         exit(1)
 
 
+def check_for_script_updates():
+    """Check if there are updates available for the scripts."""
+    print_header("Checking for Script Updates")
+    
+    # URLs for the scripts
+    py_url = "https://raw.githubusercontent.com/geekcafe/publish_to_pypi/main/publish_to_pypi.py"
+    sh_url = "https://raw.githubusercontent.com/geekcafe/publish_to_pypi/main/publish_to_pypi.sh"
+    
+    updates_available = False
+    
+    # Check Python script
+    if Path("publish_to_pypi.py").exists():
+        try:
+            # Get local file hash
+            with open("publish_to_pypi.py", "rb") as f:
+                local_py_hash = hashlib.md5(f.read()).hexdigest()
+            
+            # Get remote file hash
+            with urllib.request.urlopen(py_url) as response:
+                remote_py_content = response.read()
+                remote_py_hash = hashlib.md5(remote_py_content).hexdigest()
+            
+            if local_py_hash != remote_py_hash:
+                print_warning("A new version of publish_to_pypi.py is available.")
+                updates_available = True
+        except Exception as e:
+            print_warning(f"Could not check for Python script updates: {e}")
+    
+    # Check Shell script
+    if Path("publish_to_pypi.sh").exists():
+        try:
+            # Get local file hash
+            with open("publish_to_pypi.sh", "rb") as f:
+                local_sh_hash = hashlib.md5(f.read()).hexdigest()
+            
+            # Get remote file hash
+            with urllib.request.urlopen(sh_url) as response:
+                remote_sh_content = response.read()
+                remote_sh_hash = hashlib.md5(remote_sh_content).hexdigest()
+            
+            if local_sh_hash != remote_sh_hash:
+                print_warning("A new version of publish_to_pypi.sh is available.")
+                updates_available = True
+        except Exception as e:
+            print_warning(f"Could not check for Shell script updates: {e}")
+    
+    if updates_available:
+        print_info("Updates are available for one or more scripts.")
+        update = input("Do you want to update the scripts now? (y/n): ")
+        if update.lower() == 'y':
+            print_info("Please run the shell script again to update the scripts.")
+            print_info("Run: ./publish_to_pypi.sh --update")
+            sys.exit(0)
+        else:
+            print_info("Continuing with current versions...")
+    else:
+        print_success("All scripts are up to date.")
+
+
 def main():
     """Main function."""
     print_header("PyPI Publishing Script")
+    
+    # Check for script updates
+    check_for_script_updates()
     
     if not check_dependencies():
         sys.exit(1)

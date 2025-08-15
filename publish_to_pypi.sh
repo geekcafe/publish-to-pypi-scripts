@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# setup.sh - Cross-platform setup for python projects
+# publish_to_pypi.sh - Script to publish Python packages to PyPI
+# Version: 1.0.0
 
 # Default mode: ask the user
-FETCH_LATEST="interactive"
-CI_MODE="no"
+FETCH_LATEST="${PYPI_FETCH_LATEST:-interactive}"
+CI_MODE="${PYPI_CI_MODE:-no}"
 
 # Check if setup.json exists and has a repo_update_preference
 if [ -f "publish_to_pypi.json" ]; then
@@ -63,9 +64,26 @@ fi
 # --- fetch if requested ---
 if [[ "$FETCH_LATEST" == "yes" ]]; then
   echo "🔄 Fetching latest publish_to_pypi.py..."
-  curl -sSL \
+  # Download to temporary file first for atomic replacement
+  TMP_FILE="$(mktemp)"
+  if curl -sSL \
     https://raw.githubusercontent.com/geekcafe/publish_to_pypi/main/publish_to_pypi.py \
-    -o publish_to_pypi.py
+    -o "$TMP_FILE"; then
+    # Verify download was successful
+    if [ -s "$TMP_FILE" ]; then
+      # Move file atomically
+      mv "$TMP_FILE" publish_to_pypi.py
+      echo "✅ Successfully downloaded publish_to_pypi.py"
+    else
+      echo "❌ Error: Downloaded file is empty"
+      rm -f "$TMP_FILE"
+      exit 1
+    fi
+  else
+    echo "❌ Error: Failed to download publish_to_pypi.py"
+    rm -f "$TMP_FILE"
+    exit 1
+  fi
 fi
 
 # --- run the Python installer ---

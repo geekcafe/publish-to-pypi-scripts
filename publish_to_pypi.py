@@ -11,6 +11,8 @@ import subprocess
 import sys
 import hashlib
 import urllib.request
+import time
+import socket
 from pathlib import Path
 
 
@@ -192,8 +194,28 @@ def get_package_name():
         exit(1)
 
 
+def fetch_url_with_retry(url, max_retries=3, retry_delay=2):
+    """Fetch URL content with retry logic."""
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(url, timeout=10) as response:
+                return response.read()
+        except (urllib.error.URLError, socket.timeout) as e:
+            if attempt < max_retries - 1:
+                print_warning(f"Network error: {e}. Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                raise Exception(f"Failed to fetch {url} after {max_retries} attempts: {e}")
+
+
 def check_for_script_updates():
     """Check if there are updates available for the scripts."""
+    # Skip update check in CI mode or if disabled via environment variable
+    if "--ci" in sys.argv or os.environ.get("PYPI_SKIP_UPDATE_CHECK", "").lower() in ("1", "true", "yes"):
+        print_info("CI mode or PYPI_SKIP_UPDATE_CHECK detected - skipping update check")
+        return
+        
     print_header("Checking for Script Updates")
     
     # URLs for the scripts
@@ -209,10 +231,9 @@ def check_for_script_updates():
             with open("publish_to_pypi.py", "rb") as f:
                 local_py_hash = hashlib.md5(f.read()).hexdigest()
             
-            # Get remote file hash
-            with urllib.request.urlopen(py_url) as response:
-                remote_py_content = response.read()
-                remote_py_hash = hashlib.md5(remote_py_content).hexdigest()
+            # Get remote file hash with retry logic
+            remote_py_content = fetch_url_with_retry(py_url)
+            remote_py_hash = hashlib.md5(remote_py_content).hexdigest()
             
             if local_py_hash != remote_py_hash:
                 print_warning("A new version of publish_to_pypi.py is available.")
@@ -227,10 +248,9 @@ def check_for_script_updates():
             with open("publish_to_pypi.sh", "rb") as f:
                 local_sh_hash = hashlib.md5(f.read()).hexdigest()
             
-            # Get remote file hash
-            with urllib.request.urlopen(sh_url) as response:
-                remote_sh_content = response.read()
-                remote_sh_hash = hashlib.md5(remote_sh_content).hexdigest()
+            # Get remote file hash with retry logic
+            remote_sh_content = fetch_url_with_retry(sh_url)
+            remote_sh_hash = hashlib.md5(remote_sh_content).hexdigest()
             
             if local_sh_hash != remote_sh_hash:
                 print_warning("A new version of publish_to_pypi.sh is available.")

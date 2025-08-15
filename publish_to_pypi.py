@@ -219,8 +219,8 @@ def check_for_script_updates():
     print_header("Checking for Script Updates")
     
     # URLs for the scripts
-    py_url = "https://raw.githubusercontent.com/geekcafe/publish_to_pypi/main/publish_to_pypi.py"
-    sh_url = "https://raw.githubusercontent.com/geekcafe/publish_to_pypi/main/publish_to_pypi.sh"
+    py_url = "https://raw.githubusercontent.com/geekcafe/publish-to-pypi-scripts/refs/heads/main/publish_to_pypi.py"
+    sh_url = "https://raw.githubusercontent.com/geekcafe/publish-to-pypi-scripts/refs/heads/main/publish_to_pypi.sh"
     
     updates_available = False
     

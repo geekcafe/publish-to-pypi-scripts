@@ -66,21 +66,30 @@ if [[ "$FETCH_LATEST" == "yes" ]]; then
   echo "🔄 Fetching latest publish_to_pypi.py..."
   # Download to temporary file first for atomic replacement
   TMP_FILE="$(mktemp)"
-  if curl -sSL \
-    https://raw.githubusercontent.com/geekcafe/publish_to_pypi/main/publish_to_pypi.py \
-    -o "$TMP_FILE"; then
+  REPO_URL="https://raw.githubusercontent.com/geekcafe/publish-to-pypi-scripts/refs/heads/main/publish_to_pypi.py"
+  
+  if curl -fsSL "$REPO_URL" -o "$TMP_FILE"; then
     # Verify download was successful
     if [ -s "$TMP_FILE" ]; then
-      # Move file atomically
-      mv "$TMP_FILE" publish_to_pypi.py
-      echo "✅ Successfully downloaded publish_to_pypi.py"
+      # Check if the file looks like a Python file (starts with shebang or import)
+      if head -n 1 "$TMP_FILE" | grep -q -E '^#!|^import|^"""'; then
+        # Move file atomically
+        mv "$TMP_FILE" publish_to_pypi.py
+        echo "✅ Successfully downloaded publish_to_pypi.py"
+      else
+        echo "❌ Error: Downloaded file doesn't appear to be a valid Python script"
+        cat "$TMP_FILE" | head -n 5
+        rm -f "$TMP_FILE"
+        exit 1
+      fi
     else
       echo "❌ Error: Downloaded file is empty"
       rm -f "$TMP_FILE"
       exit 1
     fi
   else
-    echo "❌ Error: Failed to download publish_to_pypi.py"
+    echo "❌ Error: Failed to download publish_to_pypi.py from $REPO_URL"
+    echo "HTTP error or network issue occurred"
     rm -f "$TMP_FILE"
     exit 1
   fi

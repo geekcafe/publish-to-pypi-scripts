@@ -75,9 +75,112 @@ def clean_dist_directory():
     dist_dir.mkdir(exist_ok=True)
 
 
+def update_version_file():
+    """Create or update version file based on pyproject.toml version."""
+    _, version = get_package_info()
+    if not version:
+        print_warning("Could not find version in pyproject.toml. Skipping version file update.")
+        return False
+    
+    print_header("Updating Version File")
+    
+    # Determine package structure
+    pkg_name = get_package_name()
+    if not pkg_name:
+        print_warning("Could not determine package name. Skipping version file update.")
+        return False
+    
+    # Check common package structures
+    version_file_paths = [
+        Path(f"{pkg_name}/__init__.py"),  # Standard package structure
+        Path(f"src/{pkg_name}/__init__.py"),  # src-based structure
+        Path(f"{pkg_name.replace('-', '_')}/__init__.py"),  # Handle hyphenated names
+        Path(f"src/{pkg_name.replace('-', '_')}/__init__.py"),
+        Path("VERSION"),  # Simple version file
+        Path("version.py"),  # Standalone version file
+    ]
+    
+    # Find existing version files or create a new one
+    existing_file = None
+    for file_path in version_file_paths:
+        if file_path.exists():
+            # Check if file contains version info
+            with open(file_path, "r") as f:
+                content = f.read()
+                if "__version__" in content or "VERSION" in content:
+                    existing_file = file_path
+                    break
+    
+    if existing_file:
+        # Update existing version file
+        with open(existing_file, "r") as f:
+            content = f.read()
+        
+        if existing_file.name == "VERSION":
+            # Simple VERSION file
+            new_content = version
+            with open(existing_file, "w") as f:
+                f.write(new_content)
+        else:
+            # Python file with __version__
+            if "__version__" in content:
+                # Replace existing __version__ line
+                pattern = r"__version__\s*=\s*['\"]([^'\"]*)['\"]" 
+                new_content = re.sub(pattern, f"__version__ = \"{version}\"", content)
+                with open(existing_file, "w") as f:
+                    f.write(new_content)
+            else:
+                # Append __version__ to the file
+                with open(existing_file, "a") as f:
+                    f.write(f"\n__version__ = \"{version}\"\n")
+        
+        print_success(f"Updated version to {version} in {existing_file}")
+    else:
+        # Create new version file
+        # First try to find the package directory
+        pkg_dirs = [
+            Path(pkg_name),
+            Path(f"src/{pkg_name}"),
+            Path(pkg_name.replace("-", "_")),
+            Path(f"src/{pkg_name.replace('-', '_')}"),
+        ]
+        
+        target_file = None
+        for pkg_dir in pkg_dirs:
+            if pkg_dir.is_dir():
+                # Create __init__.py if it doesn't exist
+                init_file = pkg_dir / "__init__.py"
+                if not init_file.exists():
+                    with open(init_file, "w") as f:
+                        f.write(f'''"""Package {pkg_name}."""\n\n__version__ = "{version}"\n''')
+                else:
+                    # Append to existing __init__.py
+                    with open(init_file, "a") as f:
+                        f.write(f"\n__version__ = \"{version}\"\n")
+                target_file = init_file
+                break
+        
+        if not target_file:
+            # Create a standalone version.py file
+            version_py = Path("version.py")
+            with open(version_py, "w") as f:
+                f.write(f'''"""Version information."""\n\n__version__ = "{version}"\n''')
+            target_file = version_py
+        
+        print_success(f"Created version file at {target_file} with version {version}")
+    
+    return True
+
+# Make sure re module is imported
+import re
+
 def build_package():
     """Build the package."""
     print_header("Building Package")
+    
+    # Update version file before building
+    update_version_file()
+    
     try:
         # Run the build command and capture output
         result = subprocess.run(
@@ -321,16 +424,40 @@ def upload_to_pypi(repository, config_file=None):
         return False
 
 
-def get_package_name():
-    """Get the package name from pyproject.toml."""
+def get_package_info():
+    """Get the package name and version from pyproject.toml."""
     try:
         import toml
         with open("pyproject.toml", "r") as f:
             data = toml.load(f)
-            return data.get("project", {}).get("name", None)
-    except (ImportError, FileNotFoundError):
-        print_error("Failed to get package name from pyproject.toml.")
+            name = data.get("project", {}).get("name", None)
+            version = data.get("project", {}).get("version", None)
+            return name, version
+    except ImportError:
+        print_error("Failed to import toml module. Installing it...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "toml"])
+            # Try again after installing
+            import toml
+            with open("pyproject.toml", "r") as f:
+                data = toml.load(f)
+                name = data.get("project", {}).get("name", None)
+                version = data.get("project", {}).get("version", None)
+                return name, version
+        except Exception as e:
+            print_error(f"Failed to install toml module: {e}")
+            exit(1)
+    except FileNotFoundError:
+        print_error("pyproject.toml not found.")
         exit(1)
+    except Exception as e:
+        print_error(f"Failed to read pyproject.toml: {e}")
+        exit(1)
+
+def get_package_name():
+    """Get the package name from pyproject.toml."""
+    name, _ = get_package_info()
+    return name
 
 
 def fetch_url_with_retry(url, max_retries=3, retry_delay=2):

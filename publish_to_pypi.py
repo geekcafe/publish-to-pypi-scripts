@@ -90,17 +90,21 @@ def update_version_file():
         print_warning("Could not determine package name. Skipping version file update.")
         return False
     
-    # Check common package structures
+    # Define file paths to check in priority order
     version_file_paths = [
-        Path(f"{pkg_name}/__init__.py"),  # Standard package structure
-        Path(f"src/{pkg_name}/__init__.py"),  # src-based structure
-        Path(f"{pkg_name.replace('-', '_')}/__init__.py"),  # Handle hyphenated names
+        Path("version.py"),  # Standalone version.py has highest priority if it exists
+        Path(f"{pkg_name}/version.py"),
+        Path(f"src/{pkg_name}/version.py"),
+        Path(f"{pkg_name.replace('-', '_')}/version.py"),
+        Path(f"src/{pkg_name.replace('-', '_')}/version.py"),
+        Path(f"{pkg_name}/__init__.py"),  # Then check __init__.py files
+        Path(f"src/{pkg_name}/__init__.py"),
+        Path(f"{pkg_name.replace('-', '_')}/__init__.py"),
         Path(f"src/{pkg_name.replace('-', '_')}/__init__.py"),
-        Path("VERSION"),  # Simple version file
-        Path("version.py"),  # Standalone version file
+        Path("VERSION"),  # Simple VERSION file has lowest priority
     ]
     
-    # Find existing version files or create a new one
+    # First pass: find existing version files with version info
     existing_file = None
     for file_path in version_file_paths:
         if file_path.exists():
@@ -109,7 +113,16 @@ def update_version_file():
                 content = f.read()
                 if "__version__" in content or "VERSION" in content:
                     existing_file = file_path
+                    print_info(f"Found existing version file: {file_path}")
                     break
+    
+    # Second pass: if no version info found, use any existing file that matches our patterns
+    if not existing_file:
+        for file_path in version_file_paths:
+            if file_path.exists():
+                existing_file = file_path
+                print_info(f"Found existing file to add version info: {file_path}")
+                break
     
     if existing_file:
         # Update existing version file
@@ -137,7 +150,7 @@ def update_version_file():
         print_success(f"Updated version to {version} in {existing_file}")
     else:
         # Create new version file
-        # First try to find the package directory
+        # First check if any package directories exist
         pkg_dirs = [
             Path(pkg_name),
             Path(f"src/{pkg_name}"),
@@ -146,25 +159,71 @@ def update_version_file():
         ]
         
         target_file = None
+        
+        # Check if any package directory exists
+        pkg_dir_exists = False
         for pkg_dir in pkg_dirs:
             if pkg_dir.is_dir():
-                # Create __init__.py if it doesn't exist
-                init_file = pkg_dir / "__init__.py"
-                if not init_file.exists():
-                    with open(init_file, "w") as f:
-                        f.write(f'''"""Package {pkg_name}."""\n\n__version__ = "{version}"\n''')
-                else:
-                    # Append to existing __init__.py
-                    with open(init_file, "a") as f:
-                        f.write(f"\n__version__ = \"{version}\"\n")
-                target_file = init_file
+                pkg_dir_exists = True
                 break
         
+        # If package directory exists, create version.py there
+        if pkg_dir_exists:
+            for pkg_dir in pkg_dirs:
+                if pkg_dir.is_dir():
+                    # First check if version.py already exists
+                    version_file = pkg_dir / "version.py"
+                    if not version_file.exists():
+                        with open(version_file, "w") as f:
+                            f.write(f'''"""Version information for {pkg_name}."""
+
+__version__ = "{version}"
+''')
+                        target_file = version_file
+                        break
+                    
+                    # If version.py exists but __init__.py doesn't, create __init__.py
+                    init_file = pkg_dir / "__init__.py"
+                    if not init_file.exists():
+                        with open(init_file, "w") as f:
+                            f.write(f'''"""Package {pkg_name}."""
+
+from .version import __version__
+''')
+                    elif not "__version__" in open(init_file).read():
+                        # Add import if __init__.py exists but doesn't have version
+                        with open(init_file, "a") as f:
+                            f.write(f"\nfrom .version import __version__\n")
+        
+        # If no target file yet, check for existing __init__.py files
         if not target_file:
-            # Create a standalone version.py file
+            for pkg_dir in pkg_dirs:
+                if pkg_dir.is_dir():
+                    init_file = pkg_dir / "__init__.py"
+                    if init_file.exists():
+                        # Append to existing __init__.py
+                        with open(init_file, "a") as f:
+                            f.write(f"\n__version__ = \"{version}\"\n")
+                        target_file = init_file
+                        break
+                    else:
+                        # Create new __init__.py
+                        with open(init_file, "w") as f:
+                            f.write(f'''"""Package {pkg_name}."""
+
+__version__ = "{version}"
+''')
+                        target_file = init_file
+                        break
+        
+        # If still no target file, create standalone version.py in root
+        if not target_file:
             version_py = Path("version.py")
             with open(version_py, "w") as f:
-                f.write(f'''"""Version information."""\n\n__version__ = "{version}"\n''')
+                f.write(f'''"""Version information."""
+
+__version__ = "{version}"
+''')
             target_file = version_py
         
         print_success(f"Created version file at {target_file} with version {version}")

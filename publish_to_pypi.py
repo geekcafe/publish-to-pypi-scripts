@@ -79,11 +79,150 @@ def build_package():
     """Build the package."""
     print_header("Building Package")
     try:
-        subprocess.run([sys.executable, "-m", "build"], check=True)
+        # Run the build command and capture output
+        result = subprocess.run(
+            [sys.executable, "-m", "build"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
         print_success("Package built successfully!")
         return True
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
         print_error("Failed to build package.")
+        
+        # Check for AWS CodeArtifact credential errors
+        output = e.stdout + e.stderr if e.stdout and e.stderr else ""
+        if "401 Error" in output and "codeartifact" in output.lower():
+            print_warning("\nAWS CodeArtifact credential issue detected!")
+            print_info("This error occurs when your AWS CodeArtifact credentials have expired or are invalid.")
+            print_info("The global pip configuration is trying to use AWS CodeArtifact instead of PyPI.")
+            
+            # Check for common pip config locations
+            pip_configs = [
+                Path.home() / ".config/pip/pip.conf",  # Linux/macOS
+                Path.home() / "pip/pip.ini",          # Windows
+                Path.home() / ".pip/pip.conf"         # Alternative location
+            ]
+            
+            found_configs = []
+            for config in pip_configs:
+                if config.exists():
+                    found_configs.append(config)
+                    with open(config, "r") as f:
+                        content = f.read()
+                        if "codeartifact" in content.lower():
+                            print_info(f"\nFound AWS CodeArtifact configuration in: {config}")
+                            print_info("Content preview:")
+                            print("---")
+                            print(content[:500] + ("..." if len(content) > 500 else ""))
+                            print("---")
+            
+            if found_configs:
+                fix_config = input("\nWould you like to temporarily rename these pip config files for this build? (y/N): ").strip().lower()
+                if fix_config == 'y':
+                    for config in found_configs:
+                        backup = config.with_suffix(config.suffix + ".bak")
+                        try:
+                            config.rename(backup)
+                            print_success(f"Renamed {config} to {backup}")
+                        except Exception as rename_err:
+                            print_error(f"Failed to rename {config}: {rename_err}")
+                    
+                    print_info("\nLet's try building again with the config files renamed...")
+                    try:
+                        # Try building again
+                        subprocess.run([sys.executable, "-m", "build"], check=True)
+                        print_success("Package built successfully on second attempt!")
+                        
+                        # Ask if user wants to restore the config files
+                        restore = input("\nWould you like to restore the original pip config files? (Y/n): ").strip().lower()
+                        if restore != 'n':
+                            for config in found_configs:
+                                backup = config.with_suffix(config.suffix + ".bak")
+                                if backup.exists():
+                                    try:
+                                        backup.rename(config)
+                                        print_success(f"Restored {backup} to {config}")
+                                    except Exception as restore_err:
+                                        print_error(f"Failed to restore {backup}: {restore_err}")
+                        
+                        return True
+                    except subprocess.CalledProcessError:
+                        print_error("Failed to build package on second attempt.")
+                        
+                        # Restore config files if the second attempt failed
+                        print_info("Restoring original pip config files...")
+                        for config in found_configs:
+                            backup = config.with_suffix(config.suffix + ".bak")
+                            if backup.exists():
+                                try:
+                                    backup.rename(config)
+                                    print_info(f"Restored {backup} to {config}")
+                                except Exception as restore_err:
+                                    print_error(f"Failed to restore {backup}: {restore_err}")
+            else:
+                print_info("\nNo global pip config files with AWS CodeArtifact settings were found.")
+                print_info("You might want to check for environment variables like AWS_PROFILE or custom pip configurations.")
+                
+            print_info("\nAlternative solutions:")
+            print_info("1. Create a local virtual environment with 'python -m venv .venv' and activate it")
+            print_info("2. Use '--no-build-isolation' flag with pip if you're installing locally")
+            print_info("3. Temporarily set PIP_INDEX_URL environment variable: export PIP_INDEX_URL=https://pypi.org/simple/")
+            
+            # Offer to create a local pip.conf file
+            create_local = input("\nWould you like to create a local pip.conf file that points to PyPI? (y/N): ").strip().lower()
+            if create_local == 'y':
+                try:
+                    # Create pip directory if it doesn't exist
+                    pip_dir = Path(".pip")
+                    pip_dir.mkdir(exist_ok=True)
+                    
+                    # Create local pip.conf file
+                    pip_conf = pip_dir / "pip.conf"
+                    with open(pip_conf, "w") as f:
+                        f.write("""[global]
+index-url = https://pypi.org/simple/
+trusted-host = pypi.org
+""")
+                    
+                    print_success(f"Created local pip.conf file at {pip_conf.absolute()}")
+                    print_info("This configuration will take precedence over global settings when running pip in this directory.")
+                    
+                    # Add to .gitignore
+                    gitignore_path = Path(".gitignore")
+                    if gitignore_path.exists():
+                        with open(gitignore_path, "r") as f:
+                            gitignore_content = f.read()
+                        
+                        if ".pip/" not in gitignore_content:
+                            with open(gitignore_path, "a") as f:
+                                if not gitignore_content.endswith("\n"):
+                                    f.write("\n")
+                                f.write(".pip/\n")
+                            print_info("Added .pip/ to .gitignore")
+                    else:
+                        with open(gitignore_path, "w") as f:
+                            f.write(".pip/\n")
+                        print_info("Created .gitignore with .pip/ entry")
+                    
+                    # Try building again with local pip.conf
+                    print_info("\nLet's try building again with the local pip.conf...")
+                    try:
+                        # Set environment variable to ensure pip uses the local config
+                        env = os.environ.copy()
+                        env["PIP_CONFIG_FILE"] = str(pip_conf.absolute())
+                        
+                        # Try building again
+                        subprocess.run([sys.executable, "-m", "build"], check=True, env=env)
+                        print_success("Package built successfully with local pip.conf!")
+                        return True
+                    except subprocess.CalledProcessError:
+                        print_error("Failed to build package even with local pip.conf.")
+                except Exception as e:
+                    print_error(f"Failed to create local pip.conf: {e}")
+
+        
         return False
 
 
